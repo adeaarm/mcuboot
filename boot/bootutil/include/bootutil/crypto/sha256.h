@@ -3,16 +3,17 @@
  *
  * Copyright (c) 2017-2019 Linaro LTD
  * Copyright (c) 2017-2019 JUUL Labs
- * Copyright (c) 2021 Arm Limited
+ * Copyright (c) 2021-2022 Arm Limited
  */
 
 /*
  * This module provides a thin abstraction over some of the crypto
  * primitives to make it easier to swap out the used crypto library.
  *
- * At this point, there are two choices: MCUBOOT_USE_MBED_TLS, or
- * MCUBOOT_USE_TINYCRYPT.  It is a compile error there is not exactly
- * one of these defined.
+ * At this point, the choices are: MCUBOOT_USE_MBED_TLS, MCUBOOT_USE_TINYCRYPT,
+ * MCUBOOT_USE_PSA_CRYPTO, MCUBOOT_USE_CC310. Since MCUBOOT_USE_PSA_CRYPTO does not yet
+ * support all the same abstraction as MCUBOOT_USE_MBED_TLS, the support for
+ * PSA Crypto is built on top of mbed TLS, i.e. they must be both defined
  */
 
 #ifndef __BOOTUTIL_CRYPTO_SHA256_H_
@@ -20,13 +21,19 @@
 
 #include "mcuboot_config/mcuboot_config.h"
 
-#if (defined(MCUBOOT_USE_MBED_TLS) + \
+#if defined(MCUBOOT_USE_PSA_CRYPTO) || defined(MCUBOOT_USE_MBED_TLS)
+#define MCUBOOT_USE_PSA_OR_MBED_TLS
+#endif /* MCUBOOT_USE_PSA_CRYPTO || MCUBOOT_USE_MBED_TLS */
+
+#if (defined(MCUBOOT_USE_PSA_OR_MBED_TLS) + \
      defined(MCUBOOT_USE_TINYCRYPT) + \
      defined(MCUBOOT_USE_CC310)) != 1
-    #error "One crypto backend must be defined: either CC310, MBED_TLS or TINYCRYPT"
+    #error "One crypto backend must be defined: either CC310/MBED_TLS/TINYCRYPT/PSA_CRYPTO"
 #endif
 
-#if defined(MCUBOOT_USE_MBED_TLS)
+#if defined(MCUBOOT_USE_PSA_CRYPTO)
+    #include <psa/crypto.h>
+#elif defined(MCUBOOT_USE_MBED_TLS)
     #include <mbedtls/sha256.h>
     #include <mbedtls/version.h>
     #if MBEDTLS_VERSION_NUMBER >= 0x03000000
@@ -55,7 +62,36 @@
 extern "C" {
 #endif
 
-#if defined(MCUBOOT_USE_MBED_TLS)
+#if defined(MCUBOOT_USE_PSA_CRYPTO)
+typedef psa_hash_operation_t bootutil_sha256_context;
+
+static inline void bootutil_sha256_init(bootutil_sha256_context *ctx)
+{
+    *ctx = psa_hash_operation_init();
+    psa_status_t status = psa_hash_setup(ctx, PSA_ALG_SHA_256);
+    assert(status == PSA_SUCCESS);
+}
+
+static inline void bootutil_sha256_drop(bootutil_sha256_context *ctx)
+{
+    (void)psa_hash_abort(ctx);
+}
+
+static inline int bootutil_sha256_update(bootutil_sha256_context *ctx,
+                                         const void *data,
+                                         uint32_t data_len)
+{
+    return (int)psa_hash_update(ctx, data, data_len);
+}
+
+static inline int bootutil_sha256_finish(bootutil_sha256_context *ctx,
+                                          uint8_t *output)
+{
+    size_t hash_length = 0;
+    /* Assumes the output buffer is at least the expected size of the hash */
+    return (int)psa_hash_finish(ctx, output, PSA_HASH_LENGTH(PSA_ALG_SHA_256), &hash_length);
+}
+#elif defined(MCUBOOT_USE_MBED_TLS)
 typedef mbedtls_sha256_context bootutil_sha256_context;
 
 static inline void bootutil_sha256_init(bootutil_sha256_context *ctx)
