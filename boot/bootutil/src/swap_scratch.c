@@ -395,52 +395,6 @@ swap_status_source(struct boot_loader_state *state)
     return BOOT_STATUS_SOURCE_NONE;
 }
 
-#ifndef MCUBOOT_OVERWRITE_ONLY
-/**
- * Calculates the number of sectors the scratch area can contain.  A "last"
- * source sector is specified because images are copied backwards in flash
- * (final index to index number 0).
- *
- * @param last_sector_idx       The index of the last source sector
- *                                  (inclusive).
- * @param out_first_sector_idx  The index of the first source sector
- *                                  (inclusive) gets written here.
- *
- * @return                      The number of bytes comprised by the
- *                                  [first-sector, last-sector] range.
- */
-static uint32_t
-boot_copy_sz(const struct boot_loader_state *state, int last_sector_idx,
-             int *out_first_sector_idx)
-{
-    size_t scratch_sz;
-    uint32_t new_sz;
-    uint32_t sz;
-    int i;
-
-    sz = 0;
-
-    scratch_sz = boot_scratch_area_size(state);
-    for (i = last_sector_idx; i >= 0; i--) {
-        new_sz = sz + boot_img_sector_size(state, BOOT_PRIMARY_SLOT, i);
-        /*
-         * The secondary slot is not being checked here, because
-         * `boot_slots_compatible` already provides assurance that the copy size
-         * will be compatible with the primary slot and scratch.
-         */
-        if (new_sz > scratch_sz) {
-            break;
-        }
-        sz = new_sz;
-    }
-
-    /* i currently refers to a sector that doesn't fit or it is -1 because all
-     * sectors have been processed.  In both cases, exclude sector i.
-     */
-    *out_first_sector_idx = i + 1;
-    return sz;
-}
-
 /**
  * Finds the index of the last sector in the primary slot that needs swapping.
  *
@@ -490,6 +444,52 @@ find_last_sector_idx(const struct boot_loader_state *state, uint32_t copy_size)
     return last_sector_idx;
 }
 
+/**
+ * Calculates the number of sectors the scratch area can contain.  A "last"
+ * source sector is specified because images are copied backwards in flash
+ * (final index to index number 0).
+ *
+ * @param last_sector_idx       The index of the last source sector
+ *                                  (inclusive).
+ * @param out_first_sector_idx  The index of the first source sector
+ *                                  (inclusive) gets written here.
+ *
+ * @return                      The number of bytes comprised by the
+ *                                  [first-sector, last-sector] range.
+ */
+static uint32_t
+boot_copy_sz(const struct boot_loader_state *state, int last_sector_idx,
+             int *out_first_sector_idx)
+{
+    size_t scratch_sz;
+    uint32_t new_sz;
+    uint32_t sz;
+    int i;
+
+    sz = 0;
+
+    scratch_sz = boot_scratch_area_size(state);
+    for (i = last_sector_idx; i >= 0; i--) {
+        new_sz = sz + boot_img_sector_size(state, BOOT_PRIMARY_SLOT, i);
+        /*
+         * The secondary slot is not being checked here, because
+         * `boot_slots_compatible` already provides assurance that the copy size
+         * will be compatible with the primary slot and scratch.
+         */
+        if (new_sz > scratch_sz) {
+            break;
+        }
+        sz = new_sz;
+    }
+
+    /* i currently refers to a sector that doesn't fit or it is -1 because all
+     * sectors have been processed.  In both cases, exclude sector i.
+     */
+    *out_first_sector_idx = i + 1;
+    return sz;
+}
+
+#ifndef MCUBOOT_OVERWRITE_ONLY
 /**
  * Swaps the contents of two flash regions within the two image slots.
  *
